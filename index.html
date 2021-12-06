@@ -8,7 +8,7 @@
 
 		<link rel="stylesheet" href="dist/reset.css">
 		<link rel="stylesheet" href="dist/reveal.css">
-		<link rel="stylesheet" href="dist/theme/black.css">
+		<link rel="stylesheet" href="dist/theme/blood.css">
 
 		<!-- Theme used for syntax highlighted code -->
 		<link rel="stylesheet" href="plugin/highlight/monokai.css">
@@ -16,8 +16,716 @@
 	<body>
 		<div class="reveal">
 			<div class="slides">
-				<section>Slide 1</section>
-				<section>Slide 2</section>
+				<section>
+					<h3>Advanced Postgres Schema Design</h3>
+					<h4>(For Scalable Application Development)</h4>
+					<p>PGConf NYC 2021</p>
+					<small>
+						December 3, 2021
+						<br>
+						New York, NY
+					</small>
+				</section>
+				<section>
+					<h3>About Me</h3>
+					<ul class="unstyled">
+						<li>Sehrope Sarkuni</li>
+						<li>Founder of JackDB, Inc. <code>(jackdb.com)</code></li>
+						<li>Maintainer of <code>pgjdbc</code> (Java driver)</li>
+						<li>Contributor to <code>node-postgres</code> (Node.js driver)</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Schemas &leftrightarrow; Code</h3>
+					<small>
+						<blockquote>
+							Show me your flowchart and conceal your tables, and I shall continue to be mystified.
+							Show me your tables, and I won't usually need your flowchart; it'll be obvious.
+							<br>
+							&mdash; <strong>Fred Brooks, The Mythical Man Month (1975)</strong>
+						</blockquote>
+						<blockquote>
+							Bad programmers worry about the code. Good programmers worry about data structures and their relationships.
+							<br>
+							&mdash; <strong>Linus Torvalds, LKML (2006)</strong>
+						</blockquote>
+					</small>
+				</section>
+				<section>
+					<h3>Schemas &leftrightarrow; Code</h3>
+					<blockquote>
+						Dumb schemas require smart code.
+						<br>
+						Smart schemas stop dumb code.
+						<br>
+						<small>
+							&mdash; <strong>Sehrope Sarkuni, PGConf NYC (2021)</strong>
+						</small>
+					</blockquote>
+				</section>
+				<section>
+					<h3>One DB &leftrightarrow; Many Apps</h3>
+					<ul>
+						<li>Concurrent access</li>
+						<li>Some read / Some write</li>
+						<li>Schema = API</li>
+					</ul>
+				</section>
+				<section>
+					<h3>What's a schema?</h3>
+					<ul>
+						<li>What you can do</li>
+						<li>What you <u>can't</u> do</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Schema &mdash; Can Do's</h3>
+					<ul>
+						<li>Read (SELECT)</li>
+						<li>Write (INSERT / UPDATE / DELETE)</li>
+						<li>Execute (Functions &amp; Procedures)</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Performance Matters</h3>
+					<img width="50%" src="assets/slow-no-wake.jpg">
+					<p>Too slow &thickapprox; Impossible</p>
+				</section>
+				<section>
+					<h3>Schema &mdash; Can't Do's</h3>
+					<ul>
+						<li>Prevent invalid data in fields</li>
+						<li>Prevent invalid relationships</li>
+						<li>Prevent incomplete data</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Schema Priority Order</h3>
+					<h4>
+						<ol>
+							<li>Consistency</li>
+							<li>Efficiency</li>
+							<li>Simplicity</li>
+						</ol>
+					</h4>
+				</section>
+				<section>
+					<h3>Can't Do > Can Do</h3>
+					<h4>Consistency > Efficiency</h4>
+					<h5>Efficiency > Simplicity</h5>
+				</section>
+				<section>
+					<h3>Bottom Up</h3>
+					<ol>
+						<li>Columns</li>
+						<li>Relations (Tables &amp; Views)</li>
+						<li>Relationships (Foreign Keys)</li>
+						<li>Permissions (Grants)</li>
+					</ol>
+				</section>
+				<section>
+					<h3>Bottom Up</h3>
+					<ol>
+						<li><u>Data Types</u></li>
+						<li>Columns</li>
+						<li>Relations (Tables &amp; Views)</li>
+						<li>Relationships (Foreign Keys)</li>
+						<li>Permissions (Grants)</li>
+					</ol>
+				</section>
+				<section>
+					<h3>Data Types</h3>
+					<ul>
+						<li>boolean</li>
+						<li>int / bigint</li>
+						<li>date</li>
+						<li><s>timestamp</s> / timestamptz</li>
+						<li>text</li>
+						<li>uuid</li>
+					</ul>
+				</section>
+				<section>
+					<h3>More Data Types</h3>
+					<ul>
+						<li>interval</li>
+						<li>ranges</li>
+						<li>numeric</li>
+						<li>arrays</li>
+						<li>inet / cidr</li>
+						<li>Many more ...</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Size Matters</h3>
+					<div>
+						<img width="50%" src="assets/small-better-fish.jpg">
+					</div>
+					<p>Smaller &thickapprox; Faster</p>
+				</section>
+				<section>
+					<h3>UUID</h3>
+					<pre><code class="sql" data-trim data-line-numbers>
+						/* UUID stored as text, 
+						   e.g. "7c9a0778-566b-49a7-8743-205009b836aa" */
+						CREATE TABLE bad_idea (
+						  id_as_text   text
+						);
+
+						/* UUID stored as native type */
+						CREATE TABLE good_idea (
+						  id_as_uuid   uuid
+						);
+					</code></pre>
+				</section>
+				<section>
+					<h3>UUID</h3>
+					<pre><code class="sql" data-trim data-line-numbers>
+						INSERT INTO bad_idea
+						  SELECT md5('' || x)::uuid::text
+						  FROM generate_series(1, 1000000) x;
+						
+						INSERT INTO good_idea
+						  SELECT md5('' || x)::uuid
+						  FROM generate_series(1, 1000000) x;
+						
+						table_name | table_size
+						-----------+-----------
+						bad_idea   | 65 MB
+						good_idea  | 42 MB
+					</code></pre>
+					<p>Smaller and faster</p>
+				</section>
+				<section>
+					<h3>UUID</h3>
+					<pre><code class="sql" data-trim data-line-numbers>
+						INSERT INTO good_idea (id_as_uuid)
+						VALUES ('Not_A_UUID');
+
+						-- ERROR:  invalid input syntax for type uuid: "Not_A_UUID"
+					</code></pre>
+					<p>Smaller, faster, and <u>correct</u></p>
+				</section>
+				<section>
+					<h3>Data Alignment</h3>
+					<div class="r-hstack">
+						<pre><code class="sql" data-trim data-line-numbers>
+							CREATE TABLE bad_alignment (
+								a  boolean,
+								b  bigint,
+								c  boolean,
+								d  bigint,
+								e  boolean,
+								f  bigint,
+								g  boolean,
+								h  bigint
+							);
+						</code>
+					</pre>
+						<pre><code style="margin-left: 2em;" class="sql" data-trim data-line-numbers>
+						CREATE TABLE good_alignment (
+							b  bigint,
+							d  bigint,
+							f  bigint,
+							h  bigint,
+							a  boolean,
+							c  boolean,
+							e  boolean,
+							g  boolean
+						);
+					</code></pre>
+					</div>
+					<p>Column definition order matters</p>
+				</section>
+				<section>
+					<h3>Data Alignment</h3>
+					<pre><code class="sql" data-trim data-line-numbers>
+						INSERT INTO bad_alignment
+						  SELECT true, 1, true, 2, true, 3, true, 4
+						  FROM generate_series(1, 1000000) x;
+						
+						INSERT INTO good_alignment
+						SELECT 1, 2, 3, 4, true, true, true, true
+						  FROM generate_series(1, 1000000) x;
+						
+						table_name      | table_size 
+						----------------+------------
+						bad_alignment   | 89 MB
+						good_alignment  | 65 MB
+					</code></pre>
+					<p>Smaller rows &thickapprox; More rows per page &thickapprox; Faster</p>
+				</section>
+				<section>
+					<h3>Data Alignment</h3>
+					<pre><code class="text" data-trim>
+					    [12345678 12345678 12345678 12345678 12345678 12345678]
+					    [B        DDDDDDDD B        DDDDDDDD B        DDDDDDDD]
+					    [DDDDDDDD DDDDDDDD DDDDDDDD BBB-----]
+
+					"B" = Boolean        "DDDDDDDD" = Double        "-" = Unused
+					</code></pre>
+					<p>(Go biggest to smallest)</p>
+				</section>
+				<section>
+					<h3>Text is for Text</h3>
+					<img width="40%" src="assets/square-peg-round-hole.jpg">
+					<p>And it's great at it</p>
+				</section>
+				<section>
+					<h3>Avoid in <code>text</code> fields:</h3>
+					<ul>
+						<li>UUIDs &mdash; Use <code>uuid</code></li>
+						<li>Numbers &mdash; Use <code>int / bigint / numeric</code></li>
+						<li>Dates &mdash; Use <code>date</code></li>
+						<li>Timestamps &mdash; Use <code>timestamptz</code></li>
+						<li>JSON &mdash; Use <code>json / jsonb</code></li>
+						<li>Binary Data &mdash; Use <code>bytea</code></li>
+					</ul>
+				</section>
+				<section>
+					<h3>CHECK Constraints</h3>
+					<pre><code class="sql" data-trim data-line-numbers>
+						CREATE TABLE person (
+							id        uuid PRIMARY KEY,
+							username  text NOT NULL,
+							name      text NOT NULL,
+							CONSTRAINT person_ck_username_pattern
+							  CHECK (username ~* '^[a-z][a-z0-9_]+[a-z0-9]$'),
+							CONSTRAINT person_ck_name_length
+							  CHECK (LENGTH(name) &lt;= 255)
+						);
+					</code></pre>
+					<blockquote>
+						<small>
+							Check yourself before you wreck yourself
+							<br>
+							&mdash; <strong>Ice Cube, Check Yo' Self (1992)</strong>
+						</small>
+					</blockquote>
+				</section>
+				<section>
+					<h3>CHECK Constraints</h3>
+					<pre><code class="sql" data-trim data-line-numbers>
+						INSERT INTO person (id, username, name) VALUES (
+						  'b4e4b397-5104-f16c-0d4a-b95bab4a8eae'
+						  '#bad#',
+						  'Alice');
+
+						-- ERROR:  new row for relation "person" violates
+						--        check constraint "person_ck_username_pattern"
+						
+						INSERT INTO person (id, username, name)
+						SELECT 'b4e4b397-5104-f16c-0d4a-b95bab4a8eae' AS id,
+						       'good' AS username,
+						       repeat('too_long_', 100) AS name;
+						
+						-- ERROR:  new row for relation "person" violates
+						--        check constraint "person_ck_name_length"
+					</code></pre>
+					<p>Explicit naming of constraints helps too!</p>
+				</section>
+				<section>
+					<h3>Multi-Column CHECKS</h3>
+					<pre><code class="sql" data-trim data-line-numbers>
+						CREATE TABLE widget (
+							id                  uuid PRIMARY KEY,
+							manager_person_id   bigint REFERENCES person(id),
+							manager_group_id    bigint REFERENCES person(id)
+							CONSTRAINT widget_ck_manager
+							  CHECK (   (manager_person_id IS NULL)
+							         != (manager_group_id IS NULL))
+						);
+					</code></pre>
+					<small>
+						Enforce that exactly <u>one</u> type of manager field is populated.
+					</small>
+				</section>
+				<section>
+					<h3>Arrays</h3>
+					<pre><code class="sql">
+						SELECT '{foo,bar,baz,bam}'::text[]
+					</code></pre>
+					<ul>
+						<li>Usually a bad idea</li>
+						<li>Lots of gotchas</li>
+						<li>Sometimes a great idea</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Array Gotchas</h3>
+					<pre><code class="sql">
+						SELECT '{{foo,bar},{baz,bam}}'::text[]
+					</code></pre>
+					<ul>
+						<li>Dimensions</li>
+						<li>Duplicates</li>
+						<li>Ordering</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Array Checks</h3>
+					<pre><code class="sql" data-trim data-line-numbers>
+						CREATE OR REPLACE FUNCTION array_sort(anyarray)
+						  RETURNS anyarray AS
+						  $BODY$
+						    SELECT array_agg(elem ORDER BY elem)
+						    FROM UNNEST($1) AS elem;
+						  $BODY$
+						  LANGUAGE SQL IMMUTABLE;
+						
+						CREATE TABLE foo (
+						  some_array        text[] NOT NULL,
+						  CONSTRAINT foo_ck_some_array_dim
+						    CHECK (array_ndims(some_array) = 1),
+						  CONSTRAINT foo_ck_some_array_order
+						    CHECK (some_array = array_sort(some_array))
+						);
+					</code></pre>
+					<small>
+						Enforce dimensions and sort order to guarantee it for all reads.
+					</small>
+				</section>
+				<section>
+					<h3>Avoid: Flex Fields</h3>
+					<div>
+						<img width="40%" src="assets/gumby.jpg">
+					</div>
+					<ul>
+						<li>Free form / no structure</li>
+						<li>#1 cause is fear of migrations</li>
+						<li>#2 cause is fear of bureaucracy</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Three Kinds of Databases</h3>
+					<ul>
+						<li>Evolving schemas</li>
+						<li>Read-only</li>
+						<li><s>Dropped</s></li>
+					</ul>
+				</section>
+				<section>
+					<h3>Schema Migrations</h3>
+					<ul>
+						<li>Lots of tools available</li>
+						<li>Simple as .sql files</li>
+						<li>Transactional DDL is awesome</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Forward Progress</h3>
+					<img src="assets/diode.jpg">
+					<ul>
+						<li>Schemas only evolve forward</li>
+						<li>Reverting is a new step forward</li>
+						<li>DB migrations are part of app code</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Testing Locally</h3>
+					<pre><code class="sql" data-trim data-line-numbers>
+						/* Create a backup */
+						CREATE DATABASE app_bk
+						  TEMPLATE app
+						  OWNER app_owner;
+
+						/* Run your DB migrations here ... */
+
+						/* No good? */
+						DROP DATABASE app;
+
+						CREATE DATABASE app
+						  TEMPLATE app_bk
+						  OWNER app_owner;
+					</code></pre>
+				</section>
+				<section>
+					<h3>Minimal Downtime</h3>
+					<div>
+						<img width="50%" src="assets/changing-tires-moving-car.jpg">
+					</div>
+					<ul>
+						<li>Change less</li>
+						<li>Change often</li>
+						<li>Change <u>carefully</u></li>
+					</ul>
+				</section>
+				<section>
+					<h3>Locks = Downtime</h3>
+					<div>
+						<img width="60%" src="assets/locks.jpg">
+					</div>
+				</section>
+				<section>
+					<h3>Lock Duration</h3>
+					<ul>
+						<li>"Zero"</li>
+						<li>Short</li>
+						<li>Long</li>
+					</ul>
+				</section>
+				<section>
+					<h3>"Zero"</h3>
+					<ul>
+						<li>Creating new tables</li>
+						<li>Creating new types</li>
+						<li>Creating indexes on new tables</li>
+						<li>Adding data to new tables</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Short Locks</h3>
+					<ul>
+						<li>CREATE INDEX ... CONCURRENTLY</li>
+						<li>... ADD COLUMN ...</li>
+						<li>... DROP COLUMN ...</li>
+						<li>... ADD CONSTRAINT ... NOT VALID</li>
+						<li>ALTER TYPE ... ADD VALUE ...</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Long Locks</h3>
+					<ul>
+						<li>ALTER VIEW ...</li>
+						<li>CREATE INDEX ...</li>
+						<li>... ADD CONSTRAINT ...</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Data Access Patterns</h3>
+					<ul>
+						<li>Known and constant &mdash; index lookup</li>
+						<li>Known and small &mdash; index scan</li>
+						<li>Known and big &mdash; index scan(s)</li>
+						<li>Unknown</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Indexes</h3>
+					<ul>
+						<li>Redundant data &rightarrow; fast access</li>
+						<li>Everything has a cost</li>
+						<li>Bloat / Write amplification</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Indexes</h3>
+					<p>PostgreSQL <u>guarantees</u> consistency</p>
+					<small>(And consistency is always priority #1)</small>
+				</section>
+				<section>
+					<h3>B-tree Indexes</h3>
+					<ul>
+						<li>Default type (CREATE INDEX ...)</li>
+						<li>Supports equality (WHERE a = 1)</li>
+						<li>Supports ranges (WHERE a > 1)</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Unique Indexes</h3>
+					<pre><code class="sql" data-trim data-line-numbers>
+						CREATE UNIQUE INDEX foo_uk_bar_id
+						  ON foo (bar_id);
+
+						/* This succeeds */
+						INSERT INTO foo (bar_id) VALUES (1);
+
+						/* This fails */
+						INSERT INTO foo (bar_id) VALUES (1);
+						-- error: duplicate key value violates
+						--        unique constraint "foo_uk_bar_id"
+					</code></pre>
+					<p>PostgreSQL guarantees we cannot insert duplicates</p>
+					<small>(And consistency is always priority #1)</small>
+				</section>
+				<section>
+					<h3>Partial Indexes</h3>
+					<pre><code class="sql" data-trim data-line-numbers>
+						CREATE INDEX foo_ix_active_bar_id
+						  ON foo (bar_id)
+						  WHERE active;
+						
+						SELECT t.*
+						FROM foo t
+						WHERE t.active
+						  AND t.bar_id = 123
+					</code></pre>
+					<p>Only data matching the WHERE clause is indexed</p>
+					<small>(Smaller &thickapprox; Faster)</small>
+				</section>
+				<section>
+					<h3>Including Indexes</h3>
+					<pre><code class="sql" data-trim data-line-numbers>
+						CREATE INDEX foo_ix_a_including_b_c
+						  ON foo (a)
+						  INCLUDE (b, c);
+						
+						/* Index-only scan is possible */
+						SELECT
+						  t.a,
+						  t.b,
+						  t.c
+						FROM foo t
+						WHERE t.a = 123
+					</code></pre>
+					<p>Read non-key fields without going back to table</p>
+					<small>(Efficiency > Simplicity)</small>
+				</section>
+				<section>
+					<h3>Expression Indexes</h3>
+					<ul>
+						<li>a.k.a. "Functional Indexes"</li>
+						<li>Must be immutable</li>
+						<li>Incredibly useful</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Expression Indexes</h3>
+					<pre><code class="sql" data-trim data-line-numbers>
+						CREATE INDEX foo_ix_lower_name
+						  ON foo (lower(name));
+						
+						/* This will use our index */
+						SELECT t.*
+						FROM foo t
+						WHERE lower(name) = 'alice'
+					</code></pre>
+				</section>
+				<section>
+					<h3>Combine Them All</h3>
+					<pre><code class="sql" data-trim data-line-numbers>
+						/* UNIQUE ensures we cannot insert duplicates */
+						CREATE UNIQUE INDEX foo_uk_lower_name_active
+						  /* Indexed value is the lower case transformation */
+						  ON foo (lower(name))
+						  /* Only include rows which are active */
+						  WHERE active;
+					</code></pre>
+					<p>PostgreSQL guarantees we cannot insert <em>active</em> duplicates with the same lower case name</p>
+					<small>(And consistency is always priority #1)</small>
+				</section>
+				<section>
+					<h3>Views</h3>
+					<ul>
+						<li>Hide complexity</li>
+						<li>Backward compatibility</li>
+						<li>Ad-hoc convenience</li>
+					</ul>
+				</section>
+				<section>
+					<h3>Views</h3>
+					<pre><code class="sql" data-trim data-line-numbers>
+						CREATE VIEW active_account_detail AS
+						SELECT
+						  a.id,
+						  a.manager_id,
+						  p.name AS manager_name,
+						  a.department_id,
+						  d.name AS department_name,
+						  a.created_at
+						FROM account a
+						  JOIN person p ON p.id = a.manager_id
+						  JOIN department d ON d.id = a.department_id
+						WHERE a.is_active
+					</code></pre>
+				</section>
+				<section>
+					<h3>Advanced Views</h3>
+					<pre><code class="sql" data-trim data-line-numbers>
+						CREATE VIEW recent_sales AS
+						SELECT
+						  s.id,
+						  s.sale_date,
+						  s.sale_price,
+						  s.quantity,
+						  s.product_id,
+						  p.name AS product_name,
+						  p.unit_price,
+						  s.customer_id,
+						  c.name AS customer_name
+						FROM generate_series(0, 30) x
+						  JOIN sale s ON s.sale_date = (now()::date - x)
+						  JOIN product p ON p.id = s.product_id
+						  JOIN customer c ON c.id = s.customer_id
+					</code></pre>
+				</section>
+				<section>
+					<h3>Set Returning Functions</h3>
+					<h4>(Views on Steroids)</h4>
+					<pre><code class="sql" data-trim data-line-numbers>
+						CREATE FUNCTION accessible_product (IN p_person_id int)
+						  RETURNS SETOF product
+						  LANGUAGE SQL
+						  AS
+						  $BODY$
+						    SELECT p.*
+						    FROM product p
+						    WHERE p.owner_id = p_person_id
+						    OR EXISTS(
+						        SELECT 1
+						        FROM product_group pg
+						          JOIN person_group x ON x.group_id = pg.group_id
+						        WHERE pg.product_id = p.id
+						          AND x.person_id = p_person_id)
+						  $BODY$
+					</code></pre>
+					<p>Embed parameters and hide details</p>
+				</section>
+				<section>
+					<h3>Hotel Room Problem</h3>
+					<p>How to prevent <u>overlapping</u> bookings of the <u>same</u> room?</p>
+				</section>
+				<section>
+					<h3>Hotel Room Problem</h3>
+					<h4>(Not So Smart Schema Edition)</h4>
+					<ul>
+						<li>Two date columns: <code>start</code> and <code>end</code></li>
+						<li>Add <code>CHECK</code>: <code>(start &lt; end)</code></li>
+						<li>Add <code>UNIQUE</code>: <code>(room_id, start)</code></li>
+						<li>???</li>
+						<li>Serialize via <code>SELECT FOR UPDATE</code></li>
+						<li>Check for overlaps in app code</li>
+						<li>Hope nothing else modifies the data</li>
+					</ul>
+				</section>
+				<section>
+					<h4>Using Range Types / Exclusion</h4>
+					<pre><code class="sql" data-trim data-line-numbers>
+						CREATE TABLE reservation (
+							id              bigserial PRIMARY KEY,
+							room_id         bigint NOT NULL REFERENCES room (id),
+							booking_dates   daterange NOT NULL,
+							-- Prohibit overlapping bookings for the same room:
+							CONSTRAINT reservation_uk_room_id_booking_dates
+							  EXCLUDE USING gist
+								(room_id WITH =, booking_dates WITH &&),
+							-- Ensure that the daterange are half open
+							CONSTRAINT reservation_ck_booking_dates_valid
+							  CHECK (        lower_inc(booking_dates)
+									 AND NOT upper_inc(booking_dates))
+						);
+					</code></pre>
+					<p>PostgreSQL will ensure this constraint is enforced</p>
+					<small>(And consistency is always priority #1)</small>
+				</section>
+				<section>
+					<h3>Smart Schemas</h3>
+					<img width="25%" src="assets/postgresql-logo-540x557.png">
+					<h4>
+						<ol>
+							<li>Build apps <u>fast</u></li>
+							<li>Build <u>fast</u> apps</li>
+						</ol>
+					</h4>
+					<small>(And PostgreSQL allows for some <em>really</em> smart schemas)</small>
+				</section>
+				<section>
+					<h3>Q&A</h3>
+					<p>Sehrope Sarkuni</p>
+					<p>sehrope@jackdb.com</p>
+				</section>
+				<section>
+					<h3>Thank You!</h3>
+				</section>
 			</div>
 		</div>
 
